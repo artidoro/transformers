@@ -7,15 +7,17 @@ import time
 import numpy as np
 from tqdm import tqdm
 import sys
+from transformers import GPTNeoForCausalLM, GPT2Tokenizer
 
 #%%
 if __name__ == '__main__':
-    gpu = str(sys.argv[1])
-    
+    # gpu = str(sys.argv[1])
+    gpu = '0'
     #%%
     device='cuda:'+gpu
-    tokenizer = GPT2Tokenizer.from_pretrained('gpt2-finetune/checkpoint-10500')
-    model = GPT2LMHeadModel.from_pretrained('gpt2-finetune/checkpoint-10500')
+
+    model = GPTNeoForCausalLM.from_pretrained("EleutherAI/gpt-neo-2.7B", device=device)
+    tokenizer = GPT2Tokenizer.from_pretrained("EleutherAI/gpt-neo-2.7B")
     tokenizer.pad_token = tokenizer.bos_token
     model.to(device)
 
@@ -23,24 +25,30 @@ if __name__ == '__main__':
     # generator = pipeline('text-generation', model=model, tokenizer=tokenizer, device=0)
 
     #%%
-    f = open('VisualNews_UMD_gt_partition_pp_fix.json')
-    dataset_all = json.loads(f.read())
-    dataset_all.sort(key=lambda x: len(x['article_text'].split()))
-    split_size = int(len(dataset_all)/4)+1
-    print(split_size*int(gpu), split_size*(int(gpu)+1))
-    dataset_all = dataset_all[split_size*int(gpu): split_size*(int(gpu)+1)]
+    # f = open('VisualNews_UMD_gt_partition_pp_fix.json')
+    # dataset_all = json.loads(f.read())
+    text_path = '/home/apagnoni/apagnoni/gpt-2-output-dataset/data/collect_eval2_pristine.train.jsonl'
+    with open(text_path) as infile:
+        dataset_all = [json.loads(line.strip()) for line in infile.readlines()]
+
+    dataset_all = dataset_all[:20]
+
+    # dataset_all.sort(key=lambda x: len(x['text'].split()))
+    # split_size = int(len(dataset_all)/4)+1
+    # print(split_size*int(gpu), split_size*(int(gpu)+1))
+    # dataset_all = dataset_all[split_size*int(gpu): split_size*(int(gpu)+1)]
     # dataset_all = dataset_all[:4]
 
     #%%
     max_token_len = 20
     def get_prompt(json_elt, num_words=max_token_len):
-        text = json_elt['article_text']
+        text = json_elt['text']
         prompt = ' '.join(text.split()[:num_words])
         return prompt
 
 
     set_seed(42)
-    batch_size = 16
+    batch_size = 2
     dataset_all_generated_text = dataset_all.copy()
     start_time = time.time()
     start_time = time.time()
@@ -54,16 +62,16 @@ if __name__ == '__main__':
         # ideally we should be able to just input the following two variables to the function model.generate() ... => to be implemented soon!  # noqa: E501
         input_ids = torch.tensor(encodings_dict['input_ids'], device=device)
         attn_mask = torch.tensor(encodings_dict['attention_mask'], device=device)
-        max_length = min(1024, int(np.average([len(dataset_all[i+j]['article_text']) for j in range(len(prompt_text))])))
+        doc_len = min(2048, int(np.average([len(dataset_all[i+j]['text']) for j in range(len(prompt_text))])))
         outputs = model.generate(
             input_ids=input_ids,
-            attention_mask=attn_mask,
-            max_length=max_length,
-            num_beams=3, 
-            no_repeat_ngram_size=2, 
+            attention_mask=attn_mask,       
             early_stopping=True,
-            num_return_sequences=1,
-            # clean_up_tokenization_spaces=True,
+            do_sample=True,
+            max_length=doc_len+20,
+            min_length=max(0, doc_len-20),
+            top_p=0.94,
+            no_repeat_ngram_size=4
         )
 
         generated_text = tokenizer.batch_decode(outputs, clean_up_tokenization_spaces=True, skip_special_tokens=True)
@@ -71,7 +79,7 @@ if __name__ == '__main__':
         # print(generated_text)
         for j in range(len(prompt_text)):
             dataset_all_generated_text[i+j]['gpt2_output'] = generated_text[j]
-        with open('VisualNews_UMD_gt_partition_pp_fix_gpt2_'+gpu+'.json', 'w') as wfile:
+        with open('test.json', 'w') as wfile:
             wfile.write(json.dumps(dataset_all_generated_text, indent=4))
     print("--- %s seconds ---" % (time.time() - start_time))
     # %%
