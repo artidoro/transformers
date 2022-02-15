@@ -7,14 +7,14 @@ run_clm.py \
     --do_eval \
     --logging_first_step \
     --output_dir "/gscratch/argon/artidoro/transformers/examples/pytorch/language-modeling/gptneo-covid" \
-    --per_device_train_batch_size 1 \
-    --per_device_eval_batch_size 1 \
+    --per_device_train_batch_size 3 \
+    --per_device_eval_batch_size 3 \
     --save_total_limit 1 \
     --evaluation_strategy steps \
     --logging_steps 10000 \
     --save_steps 10000 \
     --eval_steps 10000 \
-    --block_size 32 \
+    --block_size 512 \
     --bf16 \
     --overwrite_output_dir \
     --deepspeed deepspeed_config.json \
